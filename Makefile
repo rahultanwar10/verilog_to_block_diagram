@@ -2,7 +2,7 @@ DESIGN_DIR= design
 SCRIPT_DIR= script
 OUTPUT_DIR= output
 
-all: generate_schematic
+all: generate_schematic ast
 
 generate_schematic: flattened_verilog
 	python3 $(SCRIPT_DIR)/generate_schematic.py | tee $(OUTPUT_DIR)/build.log
