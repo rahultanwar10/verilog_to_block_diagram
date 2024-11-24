@@ -39,10 +39,14 @@ def print_and_create_ast_graph(node, graph, indent=0, parent_id=None):
             if isinstance(inst, Instance):
                 for port in inst.portlist:
                     if isinstance(port, PortArg):
-                        if hasattr(port.argname, 'name'):
-                            temp_port_argname = port.argname.name
-                        else:
+                        if (port.argname == None):
                             temp_port_argname = port.argname
+                            print(f'port.argname = {port.argname}')
+                        elif hasattr(port.argname, "var"):
+                            temp_port_argname = port.argname.var
+                            print(f'vars() = {vars(port.argname)}')
+                        else:
+                            temp_port_argname = port.argname.name
                         print(f"{indent_str}  Internal port: {port.portname}, External wire: {temp_port_argname}")
                         label += f"\n{port.portname} -> {port.argname}"
 

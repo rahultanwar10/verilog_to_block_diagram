@@ -5,12 +5,12 @@ OUTPUT_DIR= output
 all: generate_schematic ast
 
 generate_schematic: flattened_verilog
-	python3 $(SCRIPT_DIR)/generate_schematic.py | tee $(OUTPUT_DIR)/build.log
+	python3 $(SCRIPT_DIR)/generate_schematic.py | tee $(OUTPUT_DIR)/build_generate.log
 	mv parser.out $(OUTPUT_DIR)
 	mv parsetab.py $(OUTPUT_DIR)
 
 ast: flattened_verilog
-	python3 $(SCRIPT_DIR)/ast_understanding.py | tee $(OUTPUT_DIR)/build.log
+	python3 $(SCRIPT_DIR)/ast_understanding.py | tee $(OUTPUT_DIR)/build_ast.log
 	mv parser.out $(OUTPUT_DIR)
 	mv parsetab.py $(OUTPUT_DIR)
 
