@@ -1,8 +1,9 @@
 from pyverilog.vparser.parser import parse
 from pyverilog.vparser.ast import Node, InstanceList, Instance, PortArg
 from graphviz import Digraph
+import argparse
 
-def print_and_create_ast_graph(node, graph, indent=0, parent_id=None):
+def print_and_create_ast(node, indent=0):
     """
     Recursively prints the structure of the AST node, and simultaneously creates nodes and edges in a Graphviz graph.
     
@@ -28,12 +29,6 @@ def print_and_create_ast_graph(node, graph, indent=0, parent_id=None):
     else:
         print("")
 
-    node_id = str(id(node))
-    graph.node(node_id, label=label, shape='box', style='rounded,filled', color='lightblue')
-
-    if parent_id:
-        graph.edge(parent_id, node_id)
-
     if isinstance(node, InstanceList):
         for inst in node.instances:
             if isinstance(inst, Instance):
@@ -52,23 +47,13 @@ def print_and_create_ast_graph(node, graph, indent=0, parent_id=None):
 
     if hasattr(node, 'children'):
         for child in node.children():
-            print_and_create_ast_graph(child, graph, indent + 1, node_id)
+            print_and_create_ast(child, indent + 1)
 
-# Load the Verilog file and define macros
-
-flattened_verilog_file = "output/flattened_design.v"
+parser = argparse.ArgumentParser(description="Generate a Verilog schematic diagram.")
+parser.add_argument("-input_file", required=True, help="Path to the input Verilog file")
+args = parser.parse_args()
 
 # Parse the preprocessed file
-ast, _ = parse([flattened_verilog_file])
+ast, _ = parse([args.input_file])
 
-# Generate AST visualization
-print("Abstract Syntax Tree Structure:")
-graph = Digraph(format='png')
-graph.attr(rankdir='TB')
-
-print_and_create_ast_graph(ast, graph)
-
-# Render and save the AST diagram
-filename_ast = "output/ast_structure_1"
-graph.render(filename=filename_ast, format='svg')
-print(f"AST structure saved as '{filename_ast}.svg'")
+print_and_create_ast(ast)

@@ -1,6 +1,7 @@
 from pyverilog.vparser.parser import parse
 from pyverilog.vparser.ast import Node, InstanceList, Instance, PortArg
 from graphviz import Digraph
+import argparse
 
 node_name_mapping = {"input":{}, "wire":{}, "output":{}}
 
@@ -86,15 +87,19 @@ def create_schematic_from_ast(ast):
     traverse_ast_for_schematic(ast)
 
     # Save the schematic
-    filename_schematic = "output/verilog_schematic"
+    filename_schematic = args.output
     schematic.render(filename=filename_schematic, format='svg', cleanup=True)
     print(f"Schematic saved as '{filename_schematic}.svg'")
 
-# File containing the preprocessed Verilog
-flattened_verilog_file = "output/flattened_design.v"
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Generate a Verilog schematic diagram.")
+    parser.add_argument("-input_file", required=True, help="Path to the input Verilog file")
+    parser.add_argument("-output", required=True, help="Path to the output schematic file (without extension)")
 
-# Parse the preprocessed file
-ast, _ = parse([flattened_verilog_file])
+    args = parser.parse_args()
 
-# Generate schematic from AST
-create_schematic_from_ast(ast)
+    # Parse the Verilog file
+    ast, _ = parse([args.input_file])
+
+    # Generate schematic from AST
+    create_schematic_from_ast(ast)
