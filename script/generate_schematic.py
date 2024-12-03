@@ -33,7 +33,8 @@ def create_schematic_from_ast(ast):
     # Initialize a Graphviz Digraph for the schematic
     schematic = Digraph(format='svg')
     # schematic.attr(rankdir='LR', nodesep="1.0", ranksep="1.0", splines="ortho")  # Left-to-right layout, orthogonal edges
-    schematic.attr(rankdir='LR', nodesep="1.0", ranksep="1.0")  # Left-to-right layout, orthogonal edges
+    # schematic.attr(rankdir='LR', nodesep="1.0", ranksep="1.0")  # Left-to-right layout, orthogonal edges
+    schematic.attr(rankdir='LR')  # Left-to-right layout, orthogonal edges
 
     # Cluster for input ports
     with schematic.subgraph(name="cluster_inputs") as inputs_cluster:
@@ -97,14 +98,25 @@ def create_schematic_from_ast(ast):
                     if str(external_wire) in node_name_mapping["input"]:
                         schematic.edge(f'{node_name_mapping["input"][str(external_wire)]}:e', f'{node_name}:w', label=f"{external_wire}", arrowhead="vee", color="black")
                     elif external_wire in node_name_mapping["wire"]["output"]:
-                        schematic.edge(f'{node_name_mapping["wire"]["output"][str(external_wire)]}:e', f'{node_name}:w', label=f"{external_wire}", arrowhead="vee", color="black")
+                        if isinstance(node_name_mapping["wire"]["output"][external_wire], list):
+                            for target_node in node_name_mapping["wire"]["output"][external_wire]:
+                                schematic.edge(f'{target_node}:e', f'{node_name}:w', label=f"{external_wire}", arrowhead="vee", color="black")
+                        else:
+                            schematic.edge(f'{node_name_mapping["wire"]["output"][external_wire]}:e', f'{node_name}:w', label=f"{external_wire}", arrowhead="vee", color="black")
                     elif external_wire in node_name_mapping["wire"]["input"]:
-                        schematic.edge(f'{node_name}:e', f'{node_name_mapping["wire"]["input"][str(external_wire)]}:w', label=f"{external_wire}", arrowhead="vee", color="black")
+                        if isinstance(node_name_mapping["wire"]["input"][external_wire], list):
+                            for target_node in node_name_mapping["wire"]["input"][external_wire]:
+                                schematic.edge(f'{node_name}:e', f'{target_node}:w', label=f"{external_wire}", arrowhead="vee", color="black")
+                        else:
+                            schematic.edge(f'{node_name}:e', f'{node_name_mapping["wire"]["input"][external_wire]}:w', label=f"{external_wire}", arrowhead="vee", color="black")
                     elif external_wire in node_name_mapping["output"]:
                         schematic.edge(f'{node_name}:e', f'{node_name_mapping["output"][str(external_wire)]}:w', label=f"{external_wire}", arrowhead="vee", color="black")
+                    if external_wire in node_name_mapping["wire"]["output"] and not isinstance(node_name_mapping["wire"]["output"][external_wire], list):
+                        node_name_mapping["wire"]["output"][external_wire] = [node_name_mapping["wire"]["output"][external_wire]]
+                        node_name_mapping["wire"]["output"][external_wire].append(node_name)
+                    elif external_wire in node_name_mapping["wire"]["output"] and isinstance(node_name_mapping["wire"]["output"][external_wire], list):
+                        node_name_mapping["wire"]["output"][external_wire].append(node_name)
                     else:
-                        # Update wire mapping for future connections
-                        # node_name = "wire_" + internal_port
                         node_name_mapping["wire"]["output"][external_wire] = node_name
 
         # Recursively traverse child nodes
@@ -155,25 +167,30 @@ def create_schematic_from_ast(ast):
             signal_names = signal_extractor(node)
             signal_names['input'] -= signal_names['output']
             for input_signal in signal_names["input"]:
-                if input_signal in node_name_mapping["wire"]["input"] and node_name_mapping["wire"]["input"][input_signal] is not None:
+                if input_signal in node_name_mapping["wire"]["input"] and not isinstance(node_name_mapping["wire"]["input"][input_signal], list):
                     node_name_mapping["wire"]["input"][input_signal] = [node_name_mapping["wire"]["input"][input_signal]]
+                    node_name_mapping["wire"]["input"][input_signal].append(always_node_name)
+                elif input_signal in node_name_mapping["wire"]["input"] and isinstance(node_name_mapping["wire"]["input"][input_signal], list):
                     node_name_mapping["wire"]["input"][input_signal].append(always_node_name)
                 else:
                     node_name_mapping["wire"]["input"][input_signal] = always_node_name
                 if input_signal in node_name_mapping["input"]:
                     schematic.edge(f'{node_name_mapping["input"][input_signal]}:e', f'{always_node_name}:w', label=f"{input_signal}", arrowhead="vee", color="black")
                 elif input_signal in node_name_mapping["wire"]["output"]:
-                    schematic.edge(f'{node_name_mapping["wire"]["output"][input_signal]}:e', f'{always_node_name}:w', label=f"{input_signal}", arrowhead="vee", color="black")
-                # else:
-                #     # Update wire mapping for future connections
-                #     if input_signal in node_name_mapping["wire"]["input"] and node_name_mapping["wire"]["input"][input_signal] is not None:
-                #         node_name_mapping["wire"]["input"][input_signal] = [node_name_mapping["wire"]["input"][input_signal]]
-                #         node_name_mapping["wire"]["input"][input_signal].append(always_node_name)
-                #     else:
-                #         node_name_mapping["wire"]["input"][input_signal] = always_node_name
+                    if isinstance(node_name_mapping["wire"]["output"][input_signal], list):
+                        for target_node in node_name_mapping["wire"]["output"][input_signal]:
+                            schematic.edge(f'{target_node}:e', f'{always_node_name}:w', label=f"{input_signal}", arrowhead="vee", color="black")
+                    else:
+                        schematic.edge(f'{node_name_mapping["wire"]["output"][input_signal]}:e', f'{always_node_name}:w', label=f"{input_signal}", arrowhead="vee", color="black")
 
             for output_signal in signal_names["output"]:
-                node_name_mapping["wire"]["output"][output_signal] = always_node_name
+                if output_signal in node_name_mapping["wire"]["output"] and not isinstance(node_name_mapping["wire"]["output"][output_signal], list):
+                    node_name_mapping["wire"]["output"][output_signal] = [node_name_mapping["wire"]["output"][output_signal]]
+                    node_name_mapping["wire"]["output"][output_signal].append(always_node_name)
+                elif output_signal in node_name_mapping["wire"]["output"] and isinstance(node_name_mapping["wire"]["output"][output_signal], list):
+                    node_name_mapping["wire"]["output"][output_signal].append(always_node_name)
+                else:
+                    node_name_mapping["wire"]["output"][output_signal] = always_node_name
                 if output_signal in node_name_mapping["wire"]["input"]:
                     if isinstance(node_name_mapping["wire"]["input"][output_signal], list):
                         for target_node in node_name_mapping["wire"]["input"][output_signal]:
@@ -182,9 +199,6 @@ def create_schematic_from_ast(ast):
                         schematic.edge(f'{always_node_name}:e', f'{node_name_mapping["wire"]["input"][output_signal]}:w', label=f"{output_signal}", arrowhead="vee", color="black")
                 elif output_signal in node_name_mapping["output"]:
                     schematic.edge(f'{always_node_name}:e', f'{node_name_mapping["output"][output_signal]}:w', label=f"{output_signal}", arrowhead="vee", color="black")
-                # else:
-                #     # Update wire mapping for future connections
-                #     node_name_mapping["wire"]["output"][output_signal] = always_node_name
 
         # Recursively traverse child nodes
         if hasattr(node, 'children'):
@@ -206,25 +220,30 @@ def create_schematic_from_ast(ast):
             signal_names = signal_extractor(node)
             signal_names['input'] -= signal_names['output']
             for input_signal in signal_names["input"]:
-                if input_signal in node_name_mapping["wire"]["input"] and node_name_mapping["wire"]["input"][input_signal] is not None:
+                if input_signal in node_name_mapping["wire"]["input"] and not isinstance(node_name_mapping["wire"]["input"][input_signal], list):
                     node_name_mapping["wire"]["input"][input_signal] = [node_name_mapping["wire"]["input"][input_signal]]
+                    node_name_mapping["wire"]["input"][input_signal].append(assign_node_name)
+                elif input_signal in node_name_mapping["wire"]["input"] and isinstance(node_name_mapping["wire"]["input"][input_signal], list):
                     node_name_mapping["wire"]["input"][input_signal].append(assign_node_name)
                 else:
                     node_name_mapping["wire"]["input"][input_signal] = assign_node_name
                 if input_signal in node_name_mapping["input"]:
                     schematic.edge(f'{node_name_mapping["input"][input_signal]}:e', f'{assign_node_name}:w', label=f"{input_signal}", arrowhead="vee", color="black")
                 elif input_signal in node_name_mapping["wire"]["output"]:
-                    schematic.edge(f'{node_name_mapping["wire"]["output"][input_signal]}:e', f'{assign_node_name}:w', label=f"{input_signal}", arrowhead="vee", color="black")
-                # else:
-                #     # Update wire mapping for future connections
-                #     if input_signal in node_name_mapping["wire"]["input"] and node_name_mapping["wire"]["input"][input_signal] is not None:
-                #         node_name_mapping["wire"]["input"][input_signal] = [node_name_mapping["wire"]["input"][input_signal]]
-                #         node_name_mapping["wire"]["input"][input_signal].append(assign_node_name)
-                #     else:
-                #         node_name_mapping["wire"]["input"][input_signal] = assign_node_name
+                    if isinstance(node_name_mapping["wire"]["output"][input_signal], list):
+                        for target_node in node_name_mapping["wire"]["output"][input_signal]:
+                            schematic.edge(f'{target_node}:e', f'{assign_node_name}:w', label=f"{input_signal}", arrowhead="vee", color="black")
+                    else:
+                        schematic.edge(f'{node_name_mapping["wire"]["output"][input_signal]}:e', f'{assign_node_name}:w', label=f"{input_signal}", arrowhead="vee", color="black")
 
             for output_signal in signal_names["output"]:
-                node_name_mapping["wire"]["output"][output_signal] = assign_node_name
+                if output_signal in node_name_mapping["wire"]["output"] and not isinstance(node_name_mapping["wire"]["output"][output_signal], list):
+                    node_name_mapping["wire"]["output"][output_signal] = [node_name_mapping["wire"]["output"][output_signal]]
+                    node_name_mapping["wire"]["output"][output_signal].append(assign_node_name)
+                elif output_signal in node_name_mapping["wire"]["output"] and isinstance(node_name_mapping["wire"]["output"][output_signal], list):
+                    node_name_mapping["wire"]["output"][output_signal].append(assign_node_name)
+                else:
+                    node_name_mapping["wire"]["output"][output_signal] = assign_node_name
                 if output_signal in node_name_mapping["wire"]["input"]:
                     if isinstance(node_name_mapping["wire"]["input"][output_signal], list):
                         for target_node in node_name_mapping["wire"]["input"][output_signal]:
@@ -233,10 +252,6 @@ def create_schematic_from_ast(ast):
                         schematic.edge(f'{assign_node_name}:e', f'{node_name_mapping["wire"]["input"][output_signal]}:w', label=f"{output_signal}", arrowhead="vee", color="black")
                 elif output_signal in node_name_mapping["output"]:
                     schematic.edge(f'{assign_node_name}:e', f'{node_name_mapping["output"][output_signal]}:w', label=f"{output_signal}", arrowhead="vee", color="black")
-                # else:
-                #     # Update wire mapping for future connections
-                #     node_name_mapping["wire"]["output"][output_signal] = assign_node_name
-
 
         # Recursively traverse child nodes
         if hasattr(node, 'children'):
