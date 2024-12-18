@@ -1,3 +1,4 @@
 design
 output
 .DS_Store
+rsync_all.sh
