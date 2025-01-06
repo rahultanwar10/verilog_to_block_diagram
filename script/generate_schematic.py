@@ -1,9 +1,54 @@
 from pyverilog.vparser.parser import parse
-from pyverilog.vparser.ast import Node, InstanceList, Instance, PortArg, Wire
+from pyverilog.vparser.ast import Node, InstanceList, Instance, PortArg, Wire, ModuleDef, Partselect, Decl
 from graphviz import Digraph
 import argparse
+import os
+import subprocess
+import re
 
 node_name_mapping = {"input":{}, "wire":{"input":{}, "output":{}}, "output":{}}
+declared_variables = {}
+
+def grep_module_in_files(module_name):
+    """Find the file containing the given module name."""
+    design_folder = args.design_dir
+    try:
+        # Use grep to find the module in files
+        result = subprocess.run(
+            ["grep", "-rl", f"module {module_name}", design_folder],
+            capture_output=True, text=True, check=True
+        )
+        file_paths = result.stdout.strip().split('\n')
+        # Check if there are multiple definitions
+        if len(file_paths) > 1:
+            raise ValueError(
+                f"Error: Multiple definitions of module '{module_name}' found in files:\n" +
+                "\n".join(file_paths)
+            )
+        return file_paths[0] if file_paths else None
+    except subprocess.CalledProcessError:
+        # grep returns non-zero exit code if no match is found
+        return None
+
+def extract_ports_from_file(file_path, module_name):
+    
+    # Parse the file using Pyverilog
+    ast, _ = parse([file_path])
+
+    ports = {}
+
+    # Traverse the AST to find the module definition matching the module_name
+    for description in ast.children():
+        for module in description.children():
+            if module.__class__.__name__ == "ModuleDef" and module.name == module_name:
+                # Extract ports for the specific module
+                for port in module.portlist.ports:
+                    # print(f'port.first.__class__.__name__ = {port.first.__class__.__name__}')
+                    port_name = port.first.name
+                    port_type = "input" if port.first.__class__.__name__ == "Inout" else port.first.__class__.__name__.lower()
+                    ports[port_name] = port_type
+
+    return ports
 
 def extract_always_block_code(filename, start_lineno):
     with open(filename, 'r') as file:
@@ -33,8 +78,24 @@ def create_schematic_from_ast(ast):
     # Initialize a Graphviz Digraph for the schematic
     schematic = Digraph(format='svg')
     # schematic.attr(rankdir='LR', nodesep="1.0", ranksep="1.0", splines="ortho")  # Left-to-right layout, orthogonal edges
-    # schematic.attr(rankdir='LR', nodesep="1.0", ranksep="1.0")  # Left-to-right layout, orthogonal edges
+    # schematic.attr(rankdir='LR', nodesep="1.0", ranksep="1.0")
     schematic.attr(rankdir='LR')  # Left-to-right layout, orthogonal edges
+
+    # list all wire and inputs in a dictionary 
+    def all_decalared_signals(node):
+        if node.__class__.__name__ in ('Input', 'Inout', 'Output', 'Wire', 'Reg'):
+            port_name = node.name
+            if node.width == None:
+                declared_variables[port_name] = 0
+            else:
+                declared_variables[port_name] = {}
+                declared_variables[port_name]['msb'] = node.width.msb
+                declared_variables[port_name]['lsb'] = node.width.lsb
+        if hasattr(node, 'children'):
+            for child in node.children():
+                all_decalared_signals(child)
+
+    all_decalared_signals(ast)
 
     # Cluster for input ports
     with schematic.subgraph(name="cluster_inputs") as inputs_cluster:
@@ -153,7 +214,7 @@ def create_schematic_from_ast(ast):
                 add_always_blocks_to_schematic(child)
 
     # Add this call after other AST processing
-    # add_always_blocks_to_schematic(ast)
+    add_always_blocks_to_schematic(ast)
 
     def add_assign_statements_to_schematic(node):
         if node.__class__.__name__ == 'Assign':
@@ -206,7 +267,7 @@ def create_schematic_from_ast(ast):
                 add_assign_statements_to_schematic(child)
 
     # Add this call after other AST processing
-    # add_assign_statements_to_schematic(ast)
+    add_assign_statements_to_schematic(ast)
 
     def add_wire_statements_to_schematic(node):
         if node.__class__.__name__ == 'Decl':
@@ -269,46 +330,155 @@ def create_schematic_from_ast(ast):
             module_name = inst.module
             instance_label = f"{module_name}\\n({instance_name})"
             cluster_name = f"cluster_{instance_name}"
-            
-            # Add a node for the instance
-            with schematic.subgraph(name=cluster_name) as instance_cluster:
-                instance_cluster.attr(style="solid", color="blue", label=instance_label, fontsize="12")
+            ports_position = {}
+            file_with_module = grep_module_in_files(module_name)
+            # print(f'file_with_module = {file_with_module}')
+            if file_with_module != None:
+                # if file exists then take input output signal information from the file
+                ports_position = extract_ports_from_file(file_with_module, module_name)
+            else:
                 for port in inst.portlist:
                     internal_port = port.portname
-                    node_name = str(instance_label) + str(internal_port)
-                    instance_cluster.node(node_name, label=internal_port, shape="box", style="rounded,filled", color="lightgrey")
                     if hasattr(port.argname, "var"):
                         external_wire = str(port.argname.var)
                     elif hasattr(port.argname, "name"):
                         external_wire = str(port.argname.name)
                     else:
                         external_wire = str(port.argname)
+
+                    if (external_wire == "None"):
+                        ports_position[internal_port] = 'middle'
+                    elif external_wire in node_name_mapping["output"]:
+                        ports_position[internal_port] = 'output'
+                    elif external_wire in node_name_mapping["input"]:
+                        ports_position[internal_port] = 'input'
+                    elif external_wire in node_name_mapping['wire']["input"]:
+                        ports_position[internal_port] = 'output'
+                    else:
+                        ports_position[internal_port] = 'input'
+                    
+            # to determine if external wire has a width and it is not equal to decalaration statement.
+            for port in inst.portlist:
+                if hasattr(port.argname, "var"):
+                    external_wire = str(port.argname.var)
+                elif hasattr(port.argname, "name"):
+                    external_wire = str(port.argname.name)
+                else:
+                    external_wire = str(port.argname)
+
+                
+                    
+            # Add a node for the instance
+            with schematic.subgraph(name=cluster_name) as instance_cluster:
+                instance_cluster.attr(style="solid", color="blue", label=instance_label, fontsize="12")
+                temp_input = None
+                temp_middle = None
+                temp_output = None
+                for port_name in ports_position:
+                    node_name = str(instance_label) + str(port_name)
+                    if (ports_position[port_name] == 'input'):
+                        temp_input = node_name
+                        # print(f'port_name = {port_name} and ports_position[port_name] = {ports_position[port_name]}')
+                        with instance_cluster.subgraph(name="cluster_inputs") as input_group:
+                            input_group.attr(style="invis")  # Group inputs
+                            input_group.node(node_name, label=port_name, shape='box', style="rounded,filled", color='lightgrey')
+                    elif (ports_position[port_name] == 'middle'):
+                        temp_middle = node_name
+                        with instance_cluster.subgraph(name="cluster_middle") as middle_group:
+                            middle_group.attr(style="invis")  # Group middle
+                            middle_group.node(node_name, label=port_name, shape='box', style="rounded,filled", color='lightgrey')
+                    elif (ports_position[port_name] == 'output'):
+                        temp_output = node_name
+                        with instance_cluster.subgraph(name="cluster_outputs") as output_group:
+                            output_group.attr(style="invis")  # Group outputs
+                            output_group.node(node_name, label=port_name, shape='box', style="rounded,filled", color='lightgrey')
+                # print(f'temp_middle = {temp_middle}')
+                if (temp_middle != None) and (temp_input != None) and (temp_output != None):
+                    # print(f'in the if statement: temp_input = {temp_input}, temp_middle = {temp_middle} and temp_output = {temp_output}')
+                    schematic.edge(temp_input, temp_middle, style='invis')
+                    schematic.edge(temp_middle, temp_output, style='invis')
+                elif (temp_output != None) and (temp_input != None):
+                    # print(f'in the else statement: temp_input = {temp_input}, temp_middle = {temp_middle} and temp_output = {temp_output}')
+                    schematic.edge(temp_input, temp_output, style='invis')
+                    # schematic.edge(temp_input, temp_output, style='invis')
+                temp_input = None
+                temp_middle = None
+                temp_output = None
+                for port in inst.portlist:
+                    internal_port = port.portname
+                    node_name = str(instance_label) + str(internal_port)
+                    # instance_cluster.node(node_name, label=internal_port, shape="box", style="rounded,filled", color="lightgrey")
+                    if hasattr(port.argname, "var"):
+                        external_wire = str(port.argname.var)
+                    elif hasattr(port.argname, "name"):
+                        external_wire = str(port.argname.name)
+                    else:
+                        external_wire = str(port.argname)
+
+                    temp_msb = 0
+                    temp_lsb = 0
+                    dec_msb = 0
+                    dec_lsb = 0
+
+                    if (port.argname != None) and (hasattr(port.argname, "msb")):
+                        temp_msb = port.argname.msb
+                        temp_lsb = port.argname.lsb
+                        dec_msb = declared_variables[external_wire]['msb']
+                        dec_lsb = declared_variables[external_wire]['lsb']
+                        # print(f'external_wire = {external_wire} has the port width. temp_msb = {temp_msb}, dec_msb = {dec_msb}, temp_lsb = {temp_lsb}, dec_lsb = {dec_lsb}')
+                    
+                    if (temp_lsb != dec_lsb) or (temp_msb != dec_msb):
+                        node_name_bus = external_wire + '_bus'
+                        instance_cluster.node(node_name_bus, shape='box', style="rounded,filled", color='black')
+                        schematic.edge(f'{node_name}:e', f'{node_name_bus}:w', arrowhead="vee", color="black")
+                        node_name = node_name_bus
+                        node_name_mapping["wire"]["output"][external_wire] = node_name
+                        external_wire = internal_port + external_wire
+
+
                     if str(external_wire) in node_name_mapping["input"]:
+                        pass
                         schematic.edge(f'{node_name_mapping["input"][str(external_wire)]}:e', f'{node_name}:w', label=f"{external_wire}", arrowhead="vee", color="black")
                     elif external_wire in node_name_mapping["wire"]["output"]:
                         if isinstance(node_name_mapping["wire"]["output"][external_wire], list):
                             for target_node in node_name_mapping["wire"]["output"][external_wire]:
+                                pass
                                 schematic.edge(f'{target_node}:e', f'{node_name}:w', label=f"{external_wire}", arrowhead="vee", color="black")
                         else:
+                            pass
                             schematic.edge(f'{node_name_mapping["wire"]["output"][external_wire]}:e', f'{node_name}:w', label=f"{external_wire}", arrowhead="vee", color="black")
                     elif external_wire in node_name_mapping["wire"]["input"]:
                         if isinstance(node_name_mapping["wire"]["input"][external_wire], list):
+
                             for target_node in node_name_mapping["wire"]["input"][external_wire]:
+                                pass
                                 schematic.edge(f'{node_name}:e', f'{target_node}:w', label=f"{external_wire}", arrowhead="vee", color="black")
                         else:
+                            pass
                             schematic.edge(f'{node_name}:e', f'{node_name_mapping["wire"]["input"][external_wire]}:w', label=f"{external_wire}", arrowhead="vee", color="black")
                     elif external_wire in node_name_mapping["output"]:
+                        pass
                         schematic.edge(f'{node_name}:e', f'{node_name_mapping["output"][str(external_wire)]}:w', label=f"{external_wire}", arrowhead="vee", color="black")
+                    # to put the wire names in node_name_mapping dictionary.
                     if (external_wire != 'None'):
-                        # print(f'YESSSSSSSSSSSSSSSSSSSSSSSSSSSSss')
-                        if external_wire in node_name_mapping["wire"]["output"] and not isinstance(node_name_mapping["wire"]["output"][external_wire], list):
-                            node_name_mapping["wire"]["output"][external_wire] = [node_name_mapping["wire"]["output"][external_wire]]
-                            node_name_mapping["wire"]["output"][external_wire].append(node_name)
-                        elif external_wire in node_name_mapping["wire"]["output"] and isinstance(node_name_mapping["wire"]["output"][external_wire], list):
-                            node_name_mapping["wire"]["output"][external_wire].append(node_name)
-                        else:
-                            node_name_mapping["wire"]["output"][external_wire] = node_name
+                        if (ports_position[internal_port] == 'input'):
+                            if external_wire in node_name_mapping["wire"]["input"] and not isinstance(node_name_mapping["wire"]["input"][external_wire], list):
+                                node_name_mapping["wire"]["input"][external_wire] = [node_name_mapping["wire"]["input"][external_wire]]
+                                node_name_mapping["wire"]["input"][external_wire].append(node_name)
+                            elif external_wire in node_name_mapping["wire"]["input"] and isinstance(node_name_mapping["wire"]["input"][external_wire], list):
+                                node_name_mapping["wire"]["input"][external_wire].append(node_name)
+                            else:
+                                node_name_mapping["wire"]["input"][external_wire] = node_name
 
+                        elif (ports_position[internal_port] == 'output'):
+                            if external_wire in node_name_mapping["wire"]["output"] and not isinstance(node_name_mapping["wire"]["output"][external_wire], list):
+                                node_name_mapping["wire"]["output"][external_wire] = [node_name_mapping["wire"]["output"][external_wire]]
+                                node_name_mapping["wire"]["output"][external_wire].append(node_name)
+                            elif external_wire in node_name_mapping["wire"]["output"] and isinstance(node_name_mapping["wire"]["output"][external_wire], list):
+                                node_name_mapping["wire"]["output"][external_wire].append(node_name)
+                            else:
+                                node_name_mapping["wire"]["output"][external_wire] = node_name
+  
         # Recursively traverse child nodes
         if hasattr(node, 'children'):
             for child in node.children():
@@ -325,6 +495,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Generate a Verilog schematic diagram.")
     parser.add_argument("-input_file", required=True, help="Path to the input Verilog file")
     parser.add_argument("-output", required=True, help="Path to the output schematic file (without extension)")
+    parser.add_argument("-design_dir", required=True, help="Path to all the verilog ")
 
     args = parser.parse_args()
 
@@ -334,3 +505,4 @@ if __name__ == "__main__":
     # Generate schematic from AST
     create_schematic_from_ast(ast)
     # print(f'node_name_mapping = {node_name_mapping}')
+    # print(f'declared_variables = {declared_variables}')
