@@ -260,6 +260,7 @@ def create_schematic_from_ast(ast):
                 # if file exists then take input output signal information from the file
                 ports_position = extract_ports_from_file(file_with_module, module_name)
             else:
+                # print(f'instance_name = {instance_name} and module_name = {module_name}')
                 for port in inst.portlist:
                     internal_port = port.portname
                     if hasattr(port.argname, "var"):
@@ -271,16 +272,19 @@ def create_schematic_from_ast(ast):
 
                     if (external_wire == "None"):
                         ports_position[internal_port] = 'middle'
+                    elif bool(constant_pattern.match(external_wire)):
+                        ports_position[internal_port] = 'input'
                     elif external_wire in node_name_mapping["output"]:
                         ports_position[internal_port] = 'output'
                     elif external_wire in node_name_mapping["input"]:
                         ports_position[internal_port] = 'input'
-                    elif external_wire in node_name_mapping['wire']["input"]:
+                    elif (external_wire in node_name_mapping['wire']["input"]) and (not(external_wire in node_name_mapping['wire']["output"])):
                         ports_position[internal_port] = 'output'
-                    elif bool(constant_pattern.match(external_wire)):
+                    elif (external_wire in node_name_mapping['wire']["output"]) and (not(external_wire in node_name_mapping['wire']["input"])):
                         ports_position[internal_port] = 'input'
                     else:
                         ports_position[internal_port] = 'input'
+                print(f'ports_position = {ports_position}')
 
             # Add a node for the instance
             with schematic.subgraph(name=cluster_name) as instance_cluster:
