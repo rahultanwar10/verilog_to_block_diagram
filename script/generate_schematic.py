@@ -32,19 +32,40 @@ def grep_module_in_files(module_name):
         return None
 
 def extract_ports_from_file(file_path, module_name):
-    # Parse the file using Pyverilog
-    ast, _ = parse([file_path])
     ports = {}
-    # Traverse the AST to find the module definition matching the module_name
-    for description in ast.children():
-        for module in description.children():
-            if module.__class__.__name__ == "ModuleDef" and module.name == module_name:
-                # Extract ports for the specific module
-                for port in module.portlist.ports:
-                    # print(f'port.first.__class__.__name__ = {port.first.__class__.__name__}')
-                    port_name = port.first.name
-                    port_type = "input" if port.first.__class__.__name__ == "Inout" else port.first.__class__.__name__.lower()
-                    ports[port_name] = port_type
+    with open(file_path, 'r') as file:
+        for line in file:
+            line = line.strip()
+            if line.startswith(('input', 'output', 'inout')):
+                parts = line.split('//')[0].strip()
+                parts = re.sub(r'[;,)]',' ',parts)
+                parts = re.sub(r'(\w)(\[)',r'\1 \2',parts)
+                parts = parts.split()
+                parts[0] = 'output' if (parts[0] == 'inout') else parts[0]
+                if parts[1].startswith('['):
+                    for port_name in parts[2:]:
+                        ports[port_name] = parts[0]
+                else:
+                    for port_name in parts[1:]:
+                        ports[port_name] = parts[0]
+
+    # NOT USING THE NEXT PART OF CODE AS PYVERILOG IS NOT GIVING PORT'S DIRECTION IN PORTLIST CLASS. 
+    # Parse the file using Pyverilog
+    # ast, _ = parse([file_path])
+    # ports = {}
+    # # Traverse the AST to find the module definition matching the module_name
+    # for description in ast.children():
+    #     for module in description.children():
+    #         if module.__class__.__name__ == "ModuleDef" and module.name == module_name:
+    #             # Extract ports for the specific module
+    #             print(f'module.portlist.ports = {module.portlist.ports}')
+    #             for port in module.portlist.ports:
+    #                 print(f'vars(port) = {vars(port)} and module_name = {module_name}')
+    #                 # print(f'port.first.__class__.__name__ = {port.first.__class__.__name__}')
+    #                 if hasattr(port, 'first'):
+    #                     port_name = port.first.name
+    #                     port_type = "input" if port.first.__class__.__name__ == "Inout" else port.first.__class__.__name__.lower()
+    #                     ports[port_name] = port_type
 
     return ports
 
@@ -283,8 +304,9 @@ def create_schematic_from_ast(ast):
                     elif (external_wire in node_name_mapping['wire']["output"]) and (not(external_wire in node_name_mapping['wire']["input"])):
                         ports_position[internal_port] = 'input'
                     else:
-                        ports_position[internal_port] = 'input'
-                print(f'ports_position = {ports_position}')
+                        ports_position[internal_port] = 'output'
+            
+            # print(f'ports_position = {ports_position}')
 
             # Add a node for the instance
             with schematic.subgraph(name=cluster_name) as instance_cluster:
@@ -433,5 +455,5 @@ if __name__ == "__main__":
 
     # Generate schematic from AST
     create_schematic_from_ast(ast)
-    print(f'node_name_mapping = {node_name_mapping}')
+    # print(f'node_name_mapping = {node_name_mapping}')
     # print(f'declared_variables = {declared_variables}')
