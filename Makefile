@@ -1,7 +1,11 @@
-ACTUAL_DESIGN_DIR = /mnt/c/Users/rahusi/Work/cm4/ /mnt/c/Users/rahusi/Work/cm3/
+# ACTUAL_DESIGN_DIR = /mnt/c/Users/rahusi/Work/cm1/ /mnt/c/Users/rahusi/Work/cm2/ /mnt/c/Users/rahusi/Work/cm3/ /mnt/c/Users/rahusi/Work/cm4/
+##### REALLY IMPORTANT FOR MACROS: please provide macros in this format only: make flatten_verilog MACROS="'macro_1 macro_2 macro_3'" OR if there is only 1 macro then use this: make flatten_verilog MACROS="'macro_1'"
+ACTUAL_DESIGN_DIR = /mnt/c/Users/rahusi/Work/cm4/
+MACROS = "'macro_1 macro_2 macro_3'"
 DESIGN_DIR= design
 SCRIPT_DIR= script
 OUTPUT_DIR= output
+
 
 SCRIPTS := $(wildcard $(SCRIPT_DIR)/*.py)
 VERILOG_FILES := $(shell find $(ACTUAL_DESIGN_DIR) -type f \( -name "*.v" -o -name "*.sv" \))
@@ -46,7 +50,7 @@ $(OUTPUT_DIR)/ast_files/%_ast.log: $(OUTPUT_DIR)/flatten_verilog_files/%_flatten
 	mv parsetab.py $(OUTPUT_DIR)
 
 $(OUTPUT_DIR)/flatten_verilog_files/%_flattened_verilog.v: $(DESIGN_DIR)/%.v $(SCRIPT_DIR)/flatten_verilog.py
-	python3 $(SCRIPT_DIR)/flatten_verilog.py -input_file $< -output $@
+		python3 $(SCRIPT_DIR)/flatten_verilog.py -input_file $< -output $@ -macros $(MACROS)
 
 clean:
 	rm -rf $(OUTPUT_DIR)/*
